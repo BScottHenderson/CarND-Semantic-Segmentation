@@ -13,7 +13,7 @@ REGULARIZER_SCALE = 1e-3
 
 # Training parameters
 EPOCHS        = 6
-BATCH_SIZE    = 16      # Keep batch size low to avoid OOM (out-of-memory) errors.
+BATCH_SIZE    = 4       # Keep batch size low to avoid OOM (out-of-memory) errors.
 KEEP_PROB     = 0.5     # Always use 1.0 for validation, this is for training.
 LEARNING_RATE = 0.001
 
@@ -109,7 +109,7 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes):
 
     # Add a Print() node to the graph. Use tf.shape() instead of output.get_shape() so that
     # the shape will be the runtime shape not the static shape (which has not yet been set).
-    tf.Print(output, [tf.shape(output)])
+    # tf.Print(output, [tf.shape(output)])
 
     # Add a skip connection to vgg_layer4_out.
     vgg_layer4_out_1x1 = tf.layers.conv2d(vgg_layer4_out, filters=num_classes, kernel_size=1, strides=(1, 1),
