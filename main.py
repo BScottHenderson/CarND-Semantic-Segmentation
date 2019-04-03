@@ -12,8 +12,8 @@ import project_tests as tests
 REGULARIZER_SCALE = 1e-3
 
 # Training parameters
-EPOCHS        = 6
-BATCH_SIZE    = 4       # Keep batch size low to avoid OOM (out-of-memory) errors.
+EPOCHS        = 50
+BATCH_SIZE    = 10      # Keep batch size low to avoid OOM (out-of-memory) errors.
 KEEP_PROB     = 0.5     # Always use 1.0 for validation, this is for training.
 LEARNING_RATE = 0.001
 
