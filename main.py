@@ -76,7 +76,7 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes):
     # print('num_classes = {}'.format(num_classes))   # 2
 
     """
-    Note: use 'kernel_regularizer' for all conv2d[_transpose] layers below to keep weights
+    Note: use 'kernel_regularizer' for all Conv2D[Transpose] layers below to keep weights
     from becoming too large. This helps to mitigate the tendency to run out of memory during
     training.
     """
@@ -90,8 +90,8 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes):
     # Assume that vgg_layer7_out is the VGG16 layer immediately preceding the final dense layer.
 
     # For a 1x1 convolution we use a kernel size of 1.
-    output = tf.layers.conv2d(vgg_layer7_out, filters=num_classes, kernel_size=1, strides=(1, 1),
-                              kernel_regularizer=tf.contrib.layers.l2_regularizer(REGULARIZER_SCALE))
+    output = tf.keras.layers.Conv2D(filters=num_classes, kernel_size=1, strides=(1, 1),
+                                    kernel_regularizer=tf.contrib.layers.l2_regularizer(REGULARIZER_SCALE))(vgg_layer7_out)
 
     # At this point we have:
     # 1. Downsampled the input image and extracted features using the VGG16 encoder.
@@ -102,25 +102,25 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes):
     #
 
     # First upsample the image back to the original image size (deconvolution).
-    output = tf.layers.conv2d_transpose(output, num_classes, kernel_size=4, strides=(2, 2), padding='SAME',
-                                        kernel_regularizer=tf.contrib.layers.l2_regularizer(REGULARIZER_SCALE))
+    output = tf.keras.layers.Conv2DTranspose(num_classes, kernel_size=4, strides=(2, 2), padding='SAME',
+                                             kernel_regularizer=tf.contrib.layers.l2_regularizer(REGULARIZER_SCALE))(output)
 
     # Add a Print() node to the graph. Use tf.shape() instead of output.get_shape() so that
     # the shape will be the runtime shape not the static shape (which has not yet been set).
     # tf.Print(output, [tf.shape(output)])
 
     # Add a skip connection to vgg_layer4_out.
-    vgg_layer4_out_1x1 = tf.layers.conv2d(vgg_layer4_out, filters=num_classes, kernel_size=1, strides=(1, 1),
-                                          kernel_regularizer=tf.contrib.layers.l2_regularizer(REGULARIZER_SCALE))
+    vgg_layer4_out_1x1 = tf.keras.layers.Conv2D(filters=num_classes, kernel_size=1, strides=(1, 1),
+                                                kernel_regularizer=tf.contrib.layers.l2_regularizer(REGULARIZER_SCALE))(vgg_layer4_out)
     output = tf.add(output, vgg_layer4_out_1x1)
     output = tf.layers.conv2d_transpose(output, num_classes, kernel_size=4, strides=(2, 2), padding='SAME',
                                         kernel_regularizer=tf.contrib.layers.l2_regularizer(REGULARIZER_SCALE))
 
-    vgg_layer3_out_1x1 = tf.layers.conv2d(vgg_layer3_out, filters=num_classes, kernel_size=1, strides=(1, 1),
-                                          kernel_regularizer=tf.contrib.layers.l2_regularizer(REGULARIZER_SCALE))
+    vgg_layer3_out_1x1 = tf.keras.layers.Conv2D(filters=num_classes, kernel_size=1, strides=(1, 1),
+                                                kernel_regularizer=tf.contrib.layers.l2_regularizer(REGULARIZER_SCALE))(vgg_layer3_out)
     output = tf.add(output, vgg_layer3_out_1x1)
-    output = tf.layers.conv2d_transpose(output, num_classes, kernel_size=16, strides=(8, 8), padding='SAME',
-                                        kernel_regularizer=tf.contrib.layers.l2_regularizer(REGULARIZER_SCALE))
+    output = tf.keras.layers.Conv2DTranspose(num_classes, kernel_size=16, strides=(8, 8), padding='SAME',
+                                             kernel_regularizer=tf.contrib.layers.l2_regularizer(REGULARIZER_SCALE))(output)
 
     # output layer shape should be [None, None, None, num_classes]
     return output
@@ -141,7 +141,7 @@ def optimize(nn_last_layer, correct_label, learning_rate, num_classes):
     # logits is now a 2D tensor where each row represents a pixel and each column represents a class
 
     # To apply standard cross-entropy loss:
-    cross_entropy_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=correct_label))
+    cross_entropy_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=correct_label))
 
     # Training op:
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
