@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import os
-import os.path
+import time
 import tensorflow as tf
 import helper
 import warnings
@@ -13,9 +13,9 @@ REGULARIZER_SCALE = 1e-3
 
 # Training parameters
 EPOCHS        = 50
-BATCH_SIZE    = 10      # Keep batch size low to avoid OOM (out-of-memory) errors.
+BATCH_SIZE    = 8       # Keep batch size low to avoid OOM (out-of-memory) errors.
 KEEP_PROB     = 0.5     # Always use 1.0 for validation, this is for training.
-LEARNING_RATE = 0.001
+LEARNING_RATE = 0.00075
 
 
 # Just disables the warning, doesn't enable AVX/FMA
@@ -24,6 +24,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 # Check TensorFlow Version
 assert LooseVersion(tf.__version__) >= LooseVersion('1.0'), 'Please use TensorFlow version 1.0 or newer.  You are using {}'.format(tf.__version__)
 print('TensorFlow Version: {}'.format(tf.__version__))
+print('Keras Version     : {}'.format(tf.keras.__version__))
 
 # Check for a GPU
 if not tf.test.gpu_device_name():
@@ -57,6 +58,7 @@ def load_vgg(sess, vgg_path):
     vgg_layer7_out = graph.get_tensor_by_name(vgg_layer7_out_tensor_name)
 
     return vgg_input, vgg_keep_prob, vgg_layer3_out, vgg_layer4_out, vgg_layer7_out
+print('Test load_vgg().')
 tests.test_load_vgg(load_vgg, tf)
 
 
@@ -73,7 +75,7 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes):
     # print('vgg_layer3_out.shape: {}'.format(vgg_layer3_out.shape))  # 256
     # print('vgg_layer4_out.shape: {}'.format(vgg_layer4_out.shape))  # 512
     # print('vgg_layer7_out.shape: {}'.format(vgg_layer7_out.shape))  # 4096
-    # print('num_classes = {}'.format(num_classes))   # 2
+    # num_classes = 2
 
     """
     Note: use 'kernel_regularizer' for all Conv2D[Transpose] layers below to keep weights
@@ -102,7 +104,8 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes):
     #
 
     # First upsample the image back to the original image size (deconvolution).
-    output = tf.keras.layers.Conv2DTranspose(num_classes, kernel_size=4, strides=(2, 2), padding='SAME',
+    output = tf.keras.layers.Conv2DTranspose(filters=num_classes, kernel_size=4, strides=(2, 2), padding='SAME',
+                                             kernel_initializer= tf.random_normal_initializer(stddev=0.01),
                                              kernel_regularizer=tf.contrib.layers.l2_regularizer(REGULARIZER_SCALE))(output)
 
     # Add a Print() node to the graph. Use tf.shape() instead of output.get_shape() so that
@@ -111,19 +114,24 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes):
 
     # Add a skip connection to vgg_layer4_out.
     vgg_layer4_out_1x1 = tf.keras.layers.Conv2D(filters=num_classes, kernel_size=1, strides=(1, 1),
+                                                kernel_initializer= tf.random_normal_initializer(stddev=0.01),
                                                 kernel_regularizer=tf.contrib.layers.l2_regularizer(REGULARIZER_SCALE))(vgg_layer4_out)
     output = tf.add(output, vgg_layer4_out_1x1)
-    output = tf.layers.conv2d_transpose(output, num_classes, kernel_size=4, strides=(2, 2), padding='SAME',
-                                        kernel_regularizer=tf.contrib.layers.l2_regularizer(REGULARIZER_SCALE))
+    output = tf.keras.layers.Conv2DTranspose(filters=num_classes, kernel_size=4, strides=(2, 2), padding='SAME',
+                                             kernel_initializer= tf.random_normal_initializer(stddev=0.01),
+                                             kernel_regularizer=tf.contrib.layers.l2_regularizer(REGULARIZER_SCALE))(output)
 
     vgg_layer3_out_1x1 = tf.keras.layers.Conv2D(filters=num_classes, kernel_size=1, strides=(1, 1),
+                                                kernel_initializer= tf.random_normal_initializer(stddev=0.01),
                                                 kernel_regularizer=tf.contrib.layers.l2_regularizer(REGULARIZER_SCALE))(vgg_layer3_out)
     output = tf.add(output, vgg_layer3_out_1x1)
     output = tf.keras.layers.Conv2DTranspose(num_classes, kernel_size=16, strides=(8, 8), padding='SAME',
+                                             kernel_initializer= tf.random_normal_initializer(stddev=0.01),
                                              kernel_regularizer=tf.contrib.layers.l2_regularizer(REGULARIZER_SCALE))(output)
 
     # output layer shape should be [None, None, None, num_classes]
     return output
+print('Test layers().')
 tests.test_layers(layers)
 
 
@@ -136,8 +144,9 @@ def optimize(nn_last_layer, correct_label, learning_rate, num_classes):
     :param num_classes: Number of classes to classify
     :return: Tuple of (logits, train_op, cross_entropy_loss)
     """
-    # The output tensor is 4D so we have to reshape it to 2D:
+    # The output tensor is 4D (BHWC) so we have to reshape it to 2D:
     logits = tf.reshape(nn_last_layer, (-1, num_classes))
+    # Reshape to (-1, num_classes) will fill in the first value such that the total size remains constant.
     # logits is now a 2D tensor where each row represents a pixel and each column represents a class
 
     # To apply standard cross-entropy loss:
@@ -148,7 +157,22 @@ def optimize(nn_last_layer, correct_label, learning_rate, num_classes):
     train_op = optimizer.minimize(cross_entropy_loss)
 
     return logits, train_op, cross_entropy_loss
+print('Test optimize().')
 tests.test_optimize(optimize)
+
+
+def evaluate(X_data, y_data, x, y, accuracy_operation):
+    """
+    Evalutation function used for training.
+    """
+    num_examples = len(X_data)
+    total_accuracy = 0
+    sess = tf.get_default_session()
+    for offset in range(0, num_examples, BATCH_SIZE):
+        batch_x, batch_y = X_data[offset : offset + BATCH_SIZE], y_data[offset : offset + BATCH_SIZE]
+        accuracy = sess.run(accuracy_operation, feed_dict={x: batch_x, y: batch_y})
+        total_accuracy += (accuracy * len(batch_x))
+    return total_accuracy / num_examples
 
 
 def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_loss, input_image,
@@ -169,24 +193,32 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_l
     sess.run(tf.global_variables_initializer())
     for i in range(epochs):
         print('Epoch: {}'.format(i + 1))
+        total_loss = 0
         batch_num = 0
         for image, label in get_batches_fn(batch_size):
             batch_num += 1
             # test, loss = sess.run([train_op, cross_entropy_loss],
-            sess.run([train_op, cross_entropy_loss],
+            _, loss = sess.run([train_op, cross_entropy_loss],
                      feed_dict={ input_image: image,
                                  correct_label: label,
                                  keep_prob: KEEP_PROB,
                                  learning_rate: LEARNING_RATE })
             # print('Batch {:2} loss: {}'.format(batch_num, loss))
+            total_loss += loss
+        epoch_loss = total_loss / batch_num
+        print('Epoch {:.2} average batch loss: {}'.format(i+1, epoch_loss))
+print('Test train_nn().')
 tests.test_train_nn(train_nn)
 
 
 def run():
+    start = time.process_time()
+    print('Start of run() ...')
     num_classes = 2
     image_shape = (160, 576)  # KITTI dataset uses 160x576 images
     data_dir = './data'
     runs_dir = './runs'
+    model_dir = './model'
     tests.test_for_kitti_dataset(data_dir)
 
     # Path to vgg model
@@ -200,6 +232,8 @@ def run():
     #  https://www.cityscapes-dataset.com/
 
     with tf.Session() as sess:
+        print('Create the FCN-8 model ...')
+
         # Create function to get batches
         get_batches_fn = helper.gen_batch_function(os.path.join(data_dir, 'data_road/training'), image_shape)
 
@@ -216,11 +250,23 @@ def run():
         print('Define the FCN-8 model ...')
         fcn8_output = layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes)
 
-        # TODO: Train NN using the train_nn function
+        # TODO: Train NN using the train_nn function (part 1)
         print('Create training operation ...')
         logits, train_op, cross_entropy_loss = optimize(fcn8_output, correct_label, learning_rate, num_classes)
-        print('Train ...')
-        train_nn(sess, EPOCHS, BATCH_SIZE, get_batches_fn, train_op, cross_entropy_loss, vgg_input, correct_label, vgg_keep_prob, learning_rate)
+
+        saver = tf.train.Saver()
+        checkpoint_file_exists = os.path.isfile(os.path.join(model_dir, 'checkpoint'))
+        if checkpoint_file_exists:
+            print('Restore trained model from checkpoint ...')
+            saver.restore(sess, tf.train.latest_checkpoint(model_dir))
+        else:
+            # TODO: Train NN using the train_nn function (part 2)
+            print('Train FCN-8 model ...')
+            train_nn(sess, EPOCHS, BATCH_SIZE, get_batches_fn, train_op, cross_entropy_loss, vgg_input, correct_label, vgg_keep_prob, learning_rate)
+
+            print('Save the trained FCN-8 model ...')
+            saver.save(sess, os.path.join(model_dir, 'fcn8'))
+            print('Model saved.')
 
         # TODO: Save inference data using helper.save_inference_samples
         print('Save sample images ...')
@@ -228,19 +274,11 @@ def run():
 
         # OPTIONAL: Apply the trained model to a video
 
-        """
-        Note: The training data includes three classes, not just two.
-        1. Road in front of the vehicle.
-        2. Not a road
-        3. Road that is not in front of the vehicle.
-
-        Modify helper.gen_batch_function() to create a label for all three classes.
-        The initial implementation just separates the image into red and not-red.
-        Modify to look for black as well (or pink, but black is easier to represent as rgb).
-
-        Existing implementaion labels red pixesl as 'false', everything else is 'true'.
-        Modify to use an integer class, e.g., red==0, black==1, pink/other=2
-        """
+    secs = time.process_time() - start
+    mins = secs // 60
+    secs = secs % 60
+    print('Elapsed time: {:.0}m {:.2}s'.format(mins, secs))
+    print('Done.')
 
 if __name__ == '__main__':
     run()
