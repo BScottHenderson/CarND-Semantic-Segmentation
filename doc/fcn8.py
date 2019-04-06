@@ -1,3 +1,19 @@
+
+"""
+http://deeplearning.net/tutorial/fcn_2D_segm.html
+
+FCN-8 : Sums the 2x upsampled conv7 (with a stride 2 transposed convolution)
+with pool4, upsamples them with a stride 2 transposed convolution and sums
+them with pool3, and applies a transposed convolution layer with stride 8 on
+the resulting feature maps to obtain the segmentation map.
+
+Combining layers that have different precision helps retrieving fine-grained
+spatial information, as well as coarse contextual information.
+
+Note that the FCN-8 architecture was used on the polyps dataset below, since
+it produces more precise segmentation maps.
+"""
+
 def buildFCN8(nb_in_channels, input_var,
               path_weights='/Tmp/romerosa/itinf/models/' +
               'camvid/new_fcn8_model_best.npz',
