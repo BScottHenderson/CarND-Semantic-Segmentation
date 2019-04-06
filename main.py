@@ -206,7 +206,7 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_l
             # print('Batch {:2} loss: {}'.format(batch_num, loss))
             total_loss += loss
         epoch_loss = total_loss / batch_num
-        print('Epoch {} average batch loss: {:.2}'.format(i+1, epoch_loss))
+        print('Epoch {0} average batch loss: {1:.2}'.format(i+1, epoch_loss))
 print('Test train_nn().')
 tests.test_train_nn(train_nn)
 
@@ -275,9 +275,9 @@ def run():
         # OPTIONAL: Apply the trained model to a video
 
     secs = time.process_time() - start
-    mins = secs // 60
-    secs = secs % 60
-    print('Elapsed time: {:.0}m {:.2}s'.format(mins, secs))
+    mins = int(secs // 60)
+    secs = round(secs % 60, 2)
+    print('Elapsed time: {}m {}s'.format(mins, secs))
     print('Done.')
 
 if __name__ == '__main__':
