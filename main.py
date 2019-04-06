@@ -206,7 +206,7 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_l
             # print('Batch {:2} loss: {}'.format(batch_num, loss))
             total_loss += loss
         epoch_loss = total_loss / batch_num
-        print('Epoch {:.2} average batch loss: {}'.format(i+1, epoch_loss))
+        print('Epoch {} average batch loss: {:.2}'.format(i+1, epoch_loss))
 print('Test train_nn().')
 tests.test_train_nn(train_nn)
 
