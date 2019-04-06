@@ -19,6 +19,13 @@ from glob import glob
 from urllib.request import urlretrieve
 from tqdm import tqdm
 
+import skimage
+from skimage import transform
+import cv2
+
+
+ADD_AUGMENTED_IMAGES = False
+
 
 class DLProgress(tqdm):
     """
@@ -83,6 +90,23 @@ def gen_batch_function(data_folder, image_shape):
     :param image_shape: Tuple - Shape of image
     :return:
     """
+    def add_images(image, images, gt_image, gt_images, background_color):
+        """
+        Add images to the two images lists.
+        :param image: The image.
+        :param images: List of images.
+        :param gt_image: Ground-truth image.
+        :param gt_images: List of ground-truth images.
+        :param background_color: Background color in the gt image.
+        """
+        # Create "one-hot-like" labels by class.
+        gt_bg = np.all(gt_image == background_color, axis=2)
+        gt_bg = gt_bg.reshape(*gt_bg.shape, 1)
+        gt_image = np.concatenate((gt_bg, np.invert(gt_bg)), axis=2)    # background and not-background
+
+        images.append(image)
+        gt_images.append(gt_image)
+
     def get_batches_fn(batch_size):
         """
         Create batches of training data
@@ -104,17 +128,63 @@ def gen_batch_function(data_folder, image_shape):
             gt_images = []
             for image_file in image_paths[batch_i:batch_i+batch_size]:
                 gt_image_file = label_paths[os.path.basename(image_file)]
+
                 # Re-size to image_shape
                 image = scipy.misc.imresize(scipy.misc.imread(image_file), image_shape)
                 gt_image = scipy.misc.imresize(scipy.misc.imread(gt_image_file), image_shape)
 
-                # Create "one-hot-like" labels by class
-                gt_bg = np.all(gt_image == background_color, axis=2)
-                gt_bg = gt_bg.reshape(*gt_bg.shape, 1)
-                gt_image = np.concatenate((gt_bg, np.invert(gt_bg)), axis=2)
+                # original: add resized original images
+                add_images(image, images, gt_image, gt_images, background_color)
 
-                images.append(image)
-                gt_images.append(gt_image)
+                if ADD_AUGMENTED_IMAGES:
+                    # rotation: random with angle between 0° and 360° (uniform)
+                    angle = np.random.uniform(0, 360)
+                    image_aug = scipy.misc.imrotate(image, angle, interp='bilinear')
+                    gt_image_aug = scipy.misc.imrotate(gt_image, angle, interp='bilinear')
+                    add_images(image_aug, images, gt_image_aug, gt_images, background_color)
+
+                    # translation: random with shift between -10 and 10 pixels (uniform)
+                    shift = np.random.uniform(-10, 10)
+                    # M = [1 0 x]
+                    #     [0 1 y]
+                    M = np.float32([[1, 0, shift], [0, 1, shift]])
+                    (rows, cols) = image_shape[:2]
+                    image_aug = cv2.warpAffine(image, M, (cols, rows))
+                    gt_image_aug = cv2.warpAffine(gt_image, M, (cols, rows))
+                    add_images(image_aug, images, gt_image_aug, gt_images, background_color)
+
+                    # # rescaling: random with scale factor between 1/1.6 and 1.6 (log-uniform)
+                    # m = (1/1.6 + 1.6) / 2
+                    # s = (1/1.6 + 1.6) / 4
+                    # scale_factor = np.random.lognormal(mean=m, sigma=s)
+                    # image_shape_aug = (int(image_shape[0] * scale_factor), int(image_shape[1] * scale_factor))
+                    # image_aug = cv2.resize(image, dsize=image_shape_aug, interpolation=cv2.INTER_CUBIC)
+                    # gt_image_aug = cv2.resize(gt_image, dsize=image_shape_aug, interpolation=cv2.INTER_CUBIC)
+                    # add_images(image_aug, images, gt_image_aug, gt_images, background_color)
+
+                    # flipping: yes or no (bernoulli)
+                    flip_axis = np.random.binomial(size=1, n=1, p=0.5)  # n=1 -> Bournoulli distribution
+                    image_aug = cv2.flip(image, flip_axis)
+                    gt_image_aug = cv2.flip(gt_image, flip_axis)
+                    add_images(image_aug, images, gt_image_aug, gt_images, background_color)
+
+                    # shearing: random with angle between -20° and 20° (uniform)
+                    angle = np.random.uniform(-20, 20)
+                    angle_radians = angle / 180. * np.pi
+                    affine_tf = transform.AffineTransform(shear=angle_radians)  # Create Affine transform
+                    image_aug = transform.warp(image, inverse_map=affine_tf)    # Apply transform to image data
+                    gt_image_aug = transform.warp(gt_image, inverse_map=affine_tf)
+                    add_images(image_aug, images, gt_image_aug, gt_images, background_color)
+
+                    # stretching: random with stretch factor between 1/1.3 and 1.3 (log-uniform)
+                    m = (1/1.3 + 1.3) / 2
+                    s = (1/1.3 + 1.3) / 4
+                    stretch_factor = np.random.lognormal(mean=m, sigma=s)
+                    a = 1/1.3 + stretch_factor
+                    b = 1.3 - stretch_factor
+                    image_aug = skimage.exposure.rescale_intensity(image, in_range=(a, b))
+                    gt_image_aug = skimage.exposure.rescale_intensity(gt_image, in_range=(a, b))
+                    add_images(image_aug, images, gt_image_aug, gt_images, background_color)
 
             yield np.array(images), np.array(gt_images)
     return get_batches_fn
