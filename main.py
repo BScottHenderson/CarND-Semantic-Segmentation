@@ -219,7 +219,9 @@ def run():
     data_dir = './data'
     runs_dir = './runs'
     model_dir = './model'
-    tests.test_for_kitti_dataset(data_dir)
+
+    # Disable this test since we've added augmented images to the data dir.
+    # tests.test_for_kitti_dataset(data_dir)
 
     # Path to vgg model
     vgg_path = os.path.join(data_dir, 'vgg')
@@ -275,9 +277,11 @@ def run():
         # OPTIONAL: Apply the trained model to a video
 
     secs = time.process_time() - start
-    mins = int(secs // 60)
+    mins = secs / 60
     secs = round(secs % 60, 2)
-    print('Elapsed time: {}m {}s'.format(mins, secs))
+    hrs  = int(mins // 60)
+    mins = int(mins % 60)
+    print('Elapsed time: {}h {}m {}s'.format(hrs, mins, secs))
     print('Done.')
 
 if __name__ == '__main__':
