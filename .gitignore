@@ -102,3 +102,5 @@ ENV/
 
 RUNS/
 model/
+model.*/
+data/AdvancedLaneLinesVideos/
