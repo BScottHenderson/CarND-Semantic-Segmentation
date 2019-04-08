@@ -1,0 +1,14 @@
+
+    """
+    Note: The training data includes three classes, not just two.
+    1. Road in front of the vehicle.
+    2. Not a road
+    3. Road that is not in front of the vehicle.
+
+    Modify helper.gen_batch_function() to create a label for all three classes.
+    The initial implementation just separates the image into red and not-red.
+    Modify to look for black as well (or pink, but black is easier to represent as rgb).
+
+    Existing implementaion labels red pixels as 'false', everything else is 'true'.
+    Modify to use an integer class, e.g., red==0, black==1, pink/other=2
+    """
