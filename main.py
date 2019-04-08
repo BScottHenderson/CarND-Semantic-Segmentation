@@ -7,6 +7,15 @@ import warnings
 from distutils.version import LooseVersion
 import project_tests as tests
 
+import numpy as np
+import scipy
+import cv2
+from moviepy.editor import VideoFileClip
+
+# Option Flags
+PROCESS_TEST_IMAGES = False
+PROCESS_VIDEO_FILE  = True
+WRITE_OUTPUT_FRAMES = False
 
 # Model parameters
 REGULARIZER_SCALE = 1e-3
@@ -16,6 +25,13 @@ EPOCHS        = 50
 BATCH_SIZE    = 8       # Keep batch size low to avoid OOM (out-of-memory) errors.
 KEEP_PROB     = 0.5     # Always use 1.0 for validation, this is for training.
 LEARNING_RATE = 0.00075
+
+# Image text parameters
+TEXT_FONT = cv2.FONT_HERSHEY_SIMPLEX
+TEXT_SCALE = 1
+TEXT_COLOR = (255, 255, 255)
+TEXT_THICKNESS = 2
+TEXT_LINE_TYPE = cv2.LINE_AA
 
 
 # Just disables the warning, doesn't enable AVX/FMA
@@ -211,6 +227,127 @@ print('Test train_nn().')
 tests.test_train_nn(train_nn)
 
 
+class SemanticSegmentation():
+    """
+    Define a class to encapsulate video processing for semantic segmentation.
+    """
+
+    def __init__(self, sess, logits, keep_prob, image_pl, image_shape):
+        # Current frame number.
+        self.current_frame = 0
+        # Output dir for modified video frames.
+        self.video_dir = None
+        # TF session
+        self.sess = sess
+        # TF Tensor for the logits (trained model)
+        self.logits = logits
+        # TF Placeholder for the dropout keep probability
+        self.keep_prob = keep_prob
+        # TF Placeholder for the image
+        self.image_pl = image_pl
+        # Shape of images expected by model.
+        self.image_shape = image_shape
+
+    def ProcessVideoClip(self, input_file, video_dir=None):
+        """
+        Apply the Classify() function to each frame in a given video file.
+        Save the results to a new video file in the same location using the
+        same filename but with "_class" appended.
+
+        Args:
+            input_file (str): Process this video file.
+            video_dir (str): Optional location for modified video frames.
+
+        Returns:
+            none
+
+        To speed up the testing process or for debugging we can use a subclip
+        of the video. To do so add
+
+            .subclip(start_second, end_second)
+
+        to the end of the line below, where start_second and end_second are
+        integer values representing the start and end of the subclip.
+        """
+        self.video_dir = video_dir
+
+        # Open the video file.
+        input_clip = VideoFileClip(input_file)  # .subclip(40, 45)
+
+        # For each frame in the video clip, replace the frame image with the
+        # result of applying the 'Classify' function.
+        # NOTE: this function expects color images!!
+        self.current_frame = 0
+        output_clip = input_clip.fl(self.Classify)
+
+        # Save the resulting, modified, video clip to a file.
+        file_name, ext = os.path.splitext(input_file)
+        output_file = file_name + '_classified' + ext
+        output_clip.write_videofile(output_file, audio=False)
+
+        # Cleanup
+        input_clip.reader.close()
+        input_clip.audio.reader.close_proc()
+        del input_clip
+        output_clip.reader.close()
+        output_clip.audio.reader.close_proc()
+        del output_clip
+
+    def Classify(self, get_frame, t):
+        """
+        Given an image (video frame) run a trained semantic segmentation model.
+        Draw the results on a copy of the input image and return the result.
+
+        Args:
+            get_frame: Video clip's get_frame method.
+            t: time in seconds
+
+        Returns:
+            copy of the input image with classes drawn
+        """
+        self.current_frame += 1
+
+        # Get the current video frame as an image and resize to the image shape
+        # expected by the model.
+        image = scipy.misc.imresize(get_frame(t), self.image_shape)
+
+        # Run inference
+        im_softmax = self.sess.run(
+            [tf.nn.softmax(self.logits)],
+            {self.keep_prob: 1.0, self.image_pl: [image]})
+        # Splice out second column (road), reshape output back to image_shape
+        im_softmax = im_softmax[0][:, 1].reshape(self.image_shape[0], self.image_shape[1])
+        # If road softmax > 0.5, prediction is road
+        segmentation = (im_softmax > 0.5).reshape(self.image_shape[0], self.image_shape[1], 1)
+        # Create mask based on segmentation to apply to original image
+        mask = np.dot(segmentation, np.array([[0, 255, 0, 127]]))
+        mask = scipy.misc.toimage(mask, mode="RGBA")
+        street_im = scipy.misc.toimage(image)
+        street_im.paste(mask, box=None, mask=mask)
+
+        # Convert to numpy array.
+        image = np.array(street_im)
+
+        # Write the frame number to the image.
+        frame = 'Frame: {}'.format(self.current_frame)
+        cv2.putText(image, frame, (1050, 30),
+                    TEXT_FONT, TEXT_SCALE, TEXT_COLOR, TEXT_THICKNESS, TEXT_LINE_TYPE)
+
+        # Write the time (parameter t) to the image.
+        time = 'Time: {}'.format(int(round(t)))
+        cv2.putText(image, time, (1050, 700),
+                    TEXT_FONT, TEXT_SCALE, TEXT_COLOR, TEXT_THICKNESS, TEXT_LINE_TYPE)
+
+        # Optionally write the modified image to a file.
+        if self.video_dir is not None:
+            output_file = os.path.join(self.video_dir,
+                                       'frame{:06d}.jpg'.format(self.current_frame))
+            cv2.imwrite(output_file, image)
+
+        # Return the modified image.
+        return image
+
+
 def run():
     start = time.process_time()
     print('Start of run() ...')
@@ -270,11 +407,19 @@ def run():
             saver.save(sess, os.path.join(model_dir, 'fcn8'))
             print('Model saved.')
 
+        proc = SemanticSegmentation(sess, logits, vgg_keep_prob, vgg_input, image_shape)
+
         # TODO: Save inference data using helper.save_inference_samples
-        print('Save sample images ...')
-        helper.save_inference_samples(runs_dir, data_dir, sess, image_shape, logits, vgg_keep_prob, vgg_input)
+        if PROCESS_TEST_IMAGES:
+            print('Save sample images ...')
+            helper.save_inference_samples(runs_dir, data_dir, sess, image_shape, logits, vgg_keep_prob, vgg_input)
 
         # OPTIONAL: Apply the trained model to a video
+        if PROCESS_VIDEO_FILE:
+            video_dir = './data/AdvancedLaneLinesFrames' if WRITE_OUTPUT_FRAMES else None
+            proc.ProcessVideoClip('./data/AdvancedLaneLinesVideos/project_video.mp4', video_dir)
+            # proc.ProcessVideoClip('./data/AdvancedLaneLinesVideos/challenge_video.mp4', video_dir)
+            # proc.ProcessVideoClip('./data/AdvancedLaneLinesVideos/harder_challenge_video.mp4', video_dir)
 
     secs = time.process_time() - start
     mins = secs / 60
